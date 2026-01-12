@@ -29,7 +29,7 @@ pub(crate) struct Inner {
 }
 
 impl Inner {
-    fn get_recent_metrics(&self) -> Snapshot {
+    fn get_recent_metrics(&self) -> Snapshot<'_> {
         let mut counters = HashMap::new();
         let counter_handles = self.registry.get_counter_handles();
         for (key, counter) in counter_handles {
@@ -62,9 +62,15 @@ impl Inner {
             *entry = value;
         }
 
-        // Update distributions
+        self.update_distributions();
+
+        Snapshot { counters, gauges, distributions: &self.distributions }
+    }
+
+    fn update_distributions(&self) {
+        // Update distributions.
         self.drain_histograms_to_distributions();
-        // Remove expired histograms
+        // Remove expired histograms.
         let histogram_handles = self.registry.get_histogram_handles();
         for (key, histogram) in histogram_handles {
             let gen = histogram.get_generation();
@@ -89,11 +95,6 @@ impl Inner {
                 }
             }
         }
-
-        let distributions =
-            self.distributions.read().unwrap_or_else(PoisonError::into_inner).clone();
-
-        Snapshot { counters, gauges, distributions }
     }
 
     /// Drains histogram samples into distribution.
@@ -115,7 +116,7 @@ impl Inner {
     }
 
     fn render_to_write(&self, output: &mut impl io::Write) -> io::Result<()> {
-        let Snapshot { mut counters, mut distributions, mut gauges } = self.get_recent_metrics();
+        let Snapshot { mut counters, mut gauges, distributions } = self.get_recent_metrics();
 
         let mut intermediate = String::new();
         let descriptions = self.descriptions.read().unwrap_or_else(PoisonError::into_inner);
@@ -180,10 +181,12 @@ impl Inner {
             output.write_all(b"\n")?;
         }
 
-        for (name, mut by_labels) in distributions.drain() {
+        let distributions = distributions.read().unwrap_or_else(PoisonError::into_inner);
+
+        for (name, by_labels) in distributions.iter() {
             let distribution_type = self.distribution_builder.get_distribution_type(name.as_str());
 
-            // Skip native histograms in text format - they're only supported in protobuf format
+            // Skip native histograms in text format - they're only supported in protobuf format.
             if distribution_type == "native_histogram" {
                 continue;
             }
@@ -200,7 +203,7 @@ impl Inner {
             output.write_all(intermediate.as_bytes())?;
             intermediate.clear();
 
-            for (labels, distribution) in by_labels.drain(..) {
+            for (labels, distribution) in by_labels.iter() {
                 let (sum, count) = match distribution {
                     Distribution::Summary(summary, quantiles, sum) => {
                         let snapshot = summary.snapshot(Instant::now());
@@ -208,24 +211,24 @@ impl Inner {
                             let value = snapshot.quantile(quantile.value()).unwrap_or(0.0);
                             write_metric_line(
                                 &mut intermediate,
-                                &name,
+                                name,
                                 None,
-                                &labels,
+                                labels,
                                 Some(("quantile", quantile.value())),
                                 value,
                                 unit,
                             );
                         }
 
-                        (sum, summary.count() as u64)
+                        (*sum, summary.count() as u64)
                     }
                     Distribution::Histogram(histogram) => {
                         for (le, count) in histogram.buckets() {
                             write_metric_line(
                                 &mut intermediate,
-                                &name,
+                                name,
                                 Some("bucket"),
-                                &labels,
+                                labels,
                                 Some(("le", le)),
                                 count,
                                 unit,
@@ -233,9 +236,9 @@ impl Inner {
                         }
                         write_metric_line(
                             &mut intermediate,
-                            &name,
+                            name,
                             Some("bucket"),
-                            &labels,
+                            labels,
                             Some(("le", "+Inf")),
                             histogram.count(),
                             unit,
@@ -244,26 +247,26 @@ impl Inner {
                         (histogram.sum(), histogram.count())
                     }
                     Distribution::NativeHistogram(_) => {
-                        // Native histograms are not supported in text format
-                        // This branch should not be reached due to the continue above
+                        // Native histograms are not supported in text format.
+                        // This branch should not be reached due to the continue above.
                         continue;
                     }
                 };
 
                 write_metric_line::<&str, f64>(
                     &mut intermediate,
-                    &name,
+                    name,
                     Some("sum"),
-                    &labels,
+                    labels,
                     None,
                     sum,
                     unit,
                 );
                 write_metric_line::<&str, u64>(
                     &mut intermediate,
-                    &name,
+                    name,
                     Some("count"),
-                    &labels,
+                    labels,
                     None,
                     count,
                     unit,

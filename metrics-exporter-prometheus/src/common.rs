@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::RwLock;
 
 use crate::{distribution::Distribution, PrometheusRecorder};
 
@@ -116,9 +117,8 @@ impl LabelSet {
     }
 }
 
-#[derive(Debug)]
-pub struct Snapshot {
+pub struct Snapshot<'a> {
     pub counters: HashMap<String, HashMap<LabelSet, u64>>,
     pub gauges: HashMap<String, HashMap<LabelSet, f64>>,
-    pub distributions: HashMap<String, IndexMap<LabelSet, Distribution>>,
+    pub distributions: &'a RwLock<HashMap<String, IndexMap<LabelSet, Distribution>>>,
 }
