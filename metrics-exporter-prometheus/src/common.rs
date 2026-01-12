@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{distribution::Distribution, PrometheusRecorder};
-
 use crate::formatting::sanitize_metric_name;
+use crate::recorder::DistributionMap;
+use crate::PrometheusRecorder;
 use indexmap::IndexMap;
 use metrics::SetRecorderError;
 use thiserror::Error;
@@ -117,8 +117,8 @@ impl LabelSet {
 }
 
 #[derive(Debug)]
-pub struct Snapshot {
+pub struct Snapshot<'a> {
     pub counters: HashMap<String, HashMap<LabelSet, u64>>,
     pub gauges: HashMap<String, HashMap<LabelSet, f64>>,
-    pub distributions: HashMap<String, IndexMap<LabelSet, Distribution>>,
+    pub distributions: &'a DistributionMap,
 }

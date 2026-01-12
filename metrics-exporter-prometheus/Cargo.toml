@@ -41,6 +41,7 @@ _hyper-client = [
 
 [dependencies]
 base64 = { workspace = true }
+dashmap = { workspace = true }
 quanta = { workspace = true }
 thiserror = { workspace = true }
 

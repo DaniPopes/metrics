@@ -25,7 +25,7 @@ pub(crate) const PROTOBUF_CONTENT_TYPE: &str =
 /// length header.
 #[allow(clippy::too_many_lines)]
 pub(crate) fn render_protobuf(
-    snapshot: Snapshot,
+    snapshot: Snapshot<'_>,
     descriptions: &HashMap<String, (metrics::SharedString, Option<Unit>)>,
     counter_suffix: Option<&'static str>,
 ) -> Vec<u8> {
@@ -95,15 +95,18 @@ pub(crate) fn render_protobuf(
     }
 
     // Process distributions (histograms and summaries)
-    for (name, by_labels) in snapshot.distributions {
-        let sanitized_name = sanitize_metric_name(&name);
+    for entry in snapshot.distributions {
+        let name = entry.key();
+        let by_labels = entry.value();
+
+        let sanitized_name = sanitize_metric_name(name);
         let help =
             descriptions.get(name.as_str()).map(|(desc, _)| desc.to_string()).unwrap_or_default();
 
         let mut metrics = Vec::new();
         let mut metric_type = None;
         for (labels, distribution) in by_labels {
-            let label_pairs = label_set_to_protobuf(labels);
+            let label_pairs = label_set_to_protobuf(labels.clone());
 
             let metric = match distribution {
                 Distribution::Summary(summary, quantiles, sum) => {
@@ -122,7 +125,7 @@ pub(crate) fn render_protobuf(
                         label: label_pairs,
                         summary: Some(pb::Summary {
                             sample_count: Some(summary.count() as u64),
-                            sample_sum: Some(sum),
+                            sample_sum: Some(*sum),
                             quantile: quantile_values,
 
                             created_timestamp: None,
@@ -307,6 +310,7 @@ fn make_buckets(buckets: &std::collections::BTreeMap<i32, u64>) -> (Vec<pb::Buck
 mod tests {
     use super::*;
     use crate::common::Snapshot;
+    use crate::recorder::DistributionMap;
     use indexmap::IndexMap;
     use metrics::SharedString;
     use prost::Message;
@@ -323,7 +327,8 @@ mod tests {
         counter_labels.insert(labels, 42u64);
         counters.insert("http_requests".to_string(), counter_labels);
 
-        let snapshot = Snapshot { counters, gauges: HashMap::new(), distributions: HashMap::new() };
+        let snapshot =
+            Snapshot { counters, gauges: HashMap::new(), distributions: &DistributionMap::new() };
 
         let descriptions = HashMap::new();
 
@@ -355,7 +360,8 @@ mod tests {
         gauge_labels.insert(labels, 0.75f64);
         gauges.insert("cpu_usage".to_string(), gauge_labels);
 
-        let snapshot = Snapshot { counters: HashMap::new(), gauges, distributions: HashMap::new() };
+        let snapshot =
+            Snapshot { counters: HashMap::new(), gauges, distributions: &DistributionMap::new() };
 
         let mut descriptions = HashMap::new();
         descriptions.insert(

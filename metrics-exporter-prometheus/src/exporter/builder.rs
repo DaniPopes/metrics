@@ -29,7 +29,7 @@ use metrics_util::{
 use crate::common::Matcher;
 use crate::distribution::DistributionBuilder;
 use crate::native_histogram::NativeHistogramConfig;
-use crate::recorder::{Inner, PrometheusRecorder};
+use crate::recorder::{DistributionMap, Inner, PrometheusRecorder};
 use crate::registry::AtomicStorage;
 use crate::{common::BuildError, PrometheusHandle};
 
@@ -610,7 +610,7 @@ impl PrometheusBuilder {
         let inner = Inner {
             registry: Registry::new(GenerationalStorage::new(AtomicStorage)),
             recency: Recency::new(clock, self.recency_mask, self.idle_timeout),
-            distributions: RwLock::new(HashMap::new()),
+            distributions: DistributionMap::new(),
             distribution_builder: DistributionBuilder::new(
                 self.quantiles,
                 self.bucket_duration,
